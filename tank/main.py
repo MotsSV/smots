@@ -1,41 +1,51 @@
 from pygame import *
 from random import randint
 
+# Initialize Pygame and mixer
 init()
 mixer.init()
 
+# Constants
 WIDTH, HEIGHT = 800, 600
 FPS = 60
 TANK_SPEED = 3
-BULLET_SPEED = 5
+BULLET_SPEED_P1 = 5  # Bullet speed for Player 1
+BULLET_SPEED_P2 = -5  # Bullet speed for Player 2
 BULLET_COOLDOWN = 500  
 MAX_BULLETS = 3 
 RELOAD_TIME = 2000  
 
+# Load sounds
 fire_sound = mixer.Sound("assets/music/fire.ogg")
+explosion_sound = mixer.Sound("assets/music/explosion.ogg")
 mixer.music.load("assets/music/battle.ogg")
 mixer.music.play(-1)
 
+# Colors
 RED = (200, 0, 0)
 BLUE = (0, 0, 200)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (150, 150, 150)
 
+# Initialize window
 window = display.set_mode((WIDTH, HEIGHT))
 display.set_caption("Tank Battle")
 clock = time.Clock()
 
+# Fonts
 font_main = font.Font(None, 80)
 font_small = font.Font(None, 36)
 
+# Load images
 tank_red = transform.scale(image.load("assets/pictures/tank_red.png"), (50, 50))
 tank_blue = transform.scale(image.load("assets/pictures/tank_blue.png"), (50, 50))
 bullet_img = transform.scale(image.load("assets/pictures/bullet.png"), (10, 10))
 bg = transform.scale(image.load("assets/pictures/bg.jpg"), (WIDTH, HEIGHT))
 
+# Function to get player name
 def get_player_name(prompt):
-    input_box = Rect(WIDTH//2 - 100, HEIGHT//2 - 20, 200, 40)
+    input_box = Rect(WIDTH//2 - 150, HEIGHT//2 - 20, 300, 50)  # Larger input box
     name = ""
     active = True
     while active:
@@ -44,7 +54,7 @@ def get_player_name(prompt):
         window.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2 - 100))
         draw.rect(window, WHITE, input_box, 2) 
         name_text = font_main.render(name, True, WHITE)
-        window.blit(name_text, (input_box.x + 5, input_box.y + 5))
+        window.blit(name_text, (input_box.x + 10, input_box.y + 10))  # Adjusted text position
 
         for e in event.get():
             if e.type == QUIT:
@@ -54,7 +64,7 @@ def get_player_name(prompt):
                     active = False
                 elif e.key == K_BACKSPACE:
                     name = name[:-1]
-                else:
+                elif len(name) < 6:  # Limit name to 6 characters
                     name += e.unicode
 
         display.update()
@@ -62,10 +72,10 @@ def get_player_name(prompt):
 
     return name
 
-
+# Function to choose game mode
 def choose_game_mode():
-    button_1 = Rect(WIDTH//2 - 150, HEIGHT//2 - 50, 180, 60)  
-    button_3 = Rect(WIDTH//2 + 30, HEIGHT//2 - 50, 180, 60)   
+    button_1 = Rect(WIDTH//2 - 200, HEIGHT//2 - 50, 180, 60)  # Adjusted button position
+    button_3 = Rect(WIDTH//2 + 20, HEIGHT//2 - 50, 180, 60)  # Increased spacing between buttons
 
     selected = None
     while selected is None:
@@ -78,8 +88,8 @@ def choose_game_mode():
 
         text_1 = font_main.render("До 1", True, BLACK)
         text_3 = font_main.render("До 3", True, BLACK)
-        window.blit(text_1, (button_1.x + 10, button_1.y + 10)) 
-        window.blit(text_3, (button_3.x + 10, button_3.y + 10)) 
+        window.blit(text_1, (button_1.x + 50, button_1.y + 10)) 
+        window.blit(text_3, (button_3.x + 50, button_3.y + 10)) 
 
         for e in event.get():
             if e.type == QUIT:
@@ -95,14 +105,17 @@ def choose_game_mode():
 
     return selected
 
+# Get player names and game mode
 player1_name = get_player_name("Гравець 1:")
 player2_name = get_player_name("Гравець 2:")
 rounds_to_win = choose_game_mode()
 
+# Tank class
 class Tank(sprite.Sprite):
     def __init__(self, x, y, color, controls):
         super().__init__()
-        self.image = tank_red if color == "red" else tank_blue
+        self.original_image = tank_red if color == "red" else tank_blue
+        self.image = self.original_image
         self.rect = self.image.get_rect(center=(x, y))
         self.color = color
         self.controls = controls
@@ -111,18 +124,28 @@ class Tank(sprite.Sprite):
         self.bullet_count = MAX_BULLETS
         self.reloading = False
         self.reload_start = 0
+        self.angle = 0  # For rotation
 
     def update(self):
         keys = key.get_pressed()
         if keys[self.controls["up"]] and self.rect.y > 5:
             self.rect.y -= self.speed
+            self.angle = 0  # Face up
         if keys[self.controls["down"]] and self.rect.y < HEIGHT - 55:
             self.rect.y += self.speed
+            self.angle = 180  # Face down
         if keys[self.controls["left"]] and self.rect.x > 5:
             self.rect.x -= self.speed
+            self.angle = 90  # Face left
         if keys[self.controls["right"]] and self.rect.x < WIDTH - 55:
             self.rect.x += self.speed
+            self.angle = 270  # Face right
         
+        # Rotate the tank image
+        self.image = transform.rotate(self.original_image, self.angle)
+        self.rect = self.image.get_rect(center=self.rect.center)
+
+        # Reloading logic
         if self.reloading and time.get_ticks() - self.reload_start > RELOAD_TIME:
             self.bullet_count = MAX_BULLETS
             self.reloading = False
@@ -131,7 +154,8 @@ class Tank(sprite.Sprite):
         now = time.get_ticks()
         if now - self.last_shot > BULLET_COOLDOWN and self.bullet_count > 0 and not self.reloading:
             self.last_shot = now
-            bullet = Bullet(self.rect.centerx, self.rect.y, self.color)
+            direction = "up" if self.color == "red" else "down"
+            bullet = Bullet(self.rect.centerx, self.rect.y, self.color, direction)
             bullets.add(bullet)
             fire_sound.play()
             self.bullet_count -= 1
@@ -139,24 +163,32 @@ class Tank(sprite.Sprite):
                 self.reloading = True
                 self.reload_start = time.get_ticks()
 
+# Bullet class
 class Bullet(sprite.Sprite):
-    def __init__(self, x, y, color):
+    def __init__(self, x, y, color, direction):
         super().__init__()
         self.image = bullet_img
         self.rect = self.image.get_rect(center=(x, y))
-        self.speed = -BULLET_SPEED if color == "red" else BULLET_SPEED
+        self.speed = BULLET_SPEED_P1 if color == "red" else BULLET_SPEED_P2  # Different speeds for players
+        self.direction = direction  # "up" or "down"
 
     def update(self):
-        self.rect.y += self.speed
+        if self.direction == "up":
+            self.rect.y -= self.speed  # Move up
+        elif self.direction == "down":
+            self.rect.y += self.speed  # Move down
         if self.rect.bottom < 0 or self.rect.top > HEIGHT:
             self.kill()
 
+# Player controls
 controls_p1 = {"up": K_w, "down": K_s, "left": K_a, "right": K_d, "shoot": K_SPACE}
-controls_p2 = {"up": K_UP, "down": K_DOWN, "left": K_LEFT, "right": K_RIGHT, "shoot": K_RETURN}
+controls_p2 = {"up": K_UP, "down": K_DOWN, "left": K_LEFT, "right": K_RIGHT, "shoot": K_RSHIFT}
 
+# Initialize scores
 player1_score = 0
 player2_score = 0
 
+# Main game loop
 running = True
 while running:
     player1 = Tank(200, HEIGHT - 80, "red", controls_p1)
@@ -178,20 +210,37 @@ while running:
         players.update()
         bullets.update()
 
+        # Draw everything
         window.blit(bg, (0, 0))
         players.draw(window)
         bullets.draw(window)
 
+        # Display reloading status
+        if player1.reloading:
+            reload_text = font_small.render("Reloading...", True, WHITE)
+            window.blit(reload_text, (player1.rect.x, player1.rect.y - 20))
+        if player2.reloading:
+            reload_text = font_small.render("Reloading...", True, WHITE)
+            window.blit(reload_text, (player2.rect.x, player2.rect.y - 20))
+
+        # Display scores
+        score_text = font_small.render(f"{player1_name}: {player1_score}  {player2_name}: {player2_score}", True, WHITE)
+        window.blit(score_text, (WIDTH // 2 - score_text.get_width() // 2, 10))
+
+        # Check for collisions
         if sprite.spritecollide(player1, bullets, True):
             player2_score += 1
+            explosion_sound.play()
             game_over = True
         if sprite.spritecollide(player2, bullets, True):
             player1_score += 1
+            explosion_sound.play()
             game_over = True
 
         display.update()
         clock.tick(FPS)
 
+    # Check for winner
     if player1_score >= rounds_to_win:
         winner = player1_name
         running = False
@@ -199,10 +248,17 @@ while running:
         winner = player2_name
         running = False
 
+    # Reset tanks to initial positions for the next round
+    player1.rect.center = (200, HEIGHT - 80)
+    player2.rect.center = (WIDTH - 200, 30)
+
+# Game over screen
 window.fill(BLACK)
-window.blit(font_main.render("WIN", True, WHITE), (350, 200))
-window.blit(font_main.render(winner, True, WHITE), (350, 300))
+window.blit(font_main.render("GAME OVER", True, WHITE), (WIDTH // 2 - 150, 100))
+window.blit(font_main.render(f"Winner: {winner}", True, WHITE), (WIDTH // 2 - 150, 200))
+window.blit(font_small.render(f"{player1_name}: {player1_score}", True, WHITE), (WIDTH // 2 - 150, 300))
+window.blit(font_small.render(f"{player2_name}: {player2_score}", True, WHITE), (WIDTH // 2 - 150, 350))
 display.update()
-time.delay(3000)
+time.delay(5000)  # 5-second delay
 
 quit()
