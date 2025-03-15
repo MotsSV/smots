@@ -9,15 +9,15 @@ mixer.init()
 WIDTH, HEIGHT = 800, 600
 FPS = 60
 TANK_SPEED = 3
-BULLET_SPEED_P1 = 5  # Bullet speed for Player 1
-BULLET_SPEED_P2 = -5  # Bullet speed for Player 2
-BULLET_COOLDOWN = 500  
-MAX_BULLETS = 3 
-RELOAD_TIME = 2000  
+BULLET_SPEED = 5  # Швидкість пулі
+BULLET_COOLDOWN = 500  # Затримка між пострілами
+MAX_BULLETS = 3  # Максимальна кількість пуль
+RELOAD_TIME = 2000  # Час перезарядки
 
 # Load sounds
 fire_sound = mixer.Sound("assets/music/fire.ogg")
 explosion_sound = mixer.Sound("assets/music/explosion.ogg")
+engine_sound = mixer.Sound("assets/music/engine.ogg")
 mixer.music.load("assets/music/battle.ogg")
 mixer.music.play(-1)
 
@@ -105,11 +105,6 @@ def choose_game_mode():
 
     return selected
 
-# Get player names and game mode
-player1_name = get_player_name("Гравець 1:")
-player2_name = get_player_name("Гравець 2:")
-rounds_to_win = choose_game_mode()
-
 # Tank class
 class Tank(sprite.Sprite):
     def __init__(self, x, y, color, controls):
@@ -124,28 +119,28 @@ class Tank(sprite.Sprite):
         self.bullet_count = MAX_BULLETS
         self.reloading = False
         self.reload_start = 0
-        self.angle = 0  # For rotation
+        self.angle = 0  # Угол поворота танка
 
     def update(self):
         keys = key.get_pressed()
         if keys[self.controls["up"]] and self.rect.y > 5:
             self.rect.y -= self.speed
-            self.angle = 0  # Face up
+            self.angle = 0  # Поворот вверх
         if keys[self.controls["down"]] and self.rect.y < HEIGHT - 55:
             self.rect.y += self.speed
-            self.angle = 180  # Face down
+            self.angle = 180  # Поворот вниз
         if keys[self.controls["left"]] and self.rect.x > 5:
             self.rect.x -= self.speed
-            self.angle = 90  # Face left
+            self.angle = 90  # Поворот вліво
         if keys[self.controls["right"]] and self.rect.x < WIDTH - 55:
             self.rect.x += self.speed
-            self.angle = 270  # Face right
+            self.angle = 270  # Поворот вправо
         
-        # Rotate the tank image
+        # Поворот изображения танка
         self.image = transform.rotate(self.original_image, self.angle)
         self.rect = self.image.get_rect(center=self.rect.center)
 
-        # Reloading logic
+        # Логика перезарядки
         if self.reloading and time.get_ticks() - self.reload_start > RELOAD_TIME:
             self.bullet_count = MAX_BULLETS
             self.reloading = False
@@ -154,8 +149,7 @@ class Tank(sprite.Sprite):
         now = time.get_ticks()
         if now - self.last_shot > BULLET_COOLDOWN and self.bullet_count > 0 and not self.reloading:
             self.last_shot = now
-            direction = "up" if self.color == "red" else "down"
-            bullet = Bullet(self.rect.centerx, self.rect.y, self.color, direction)
+            bullet = Bullet(self.rect.centerx, self.rect.centery, self.color, self.angle)
             bullets.add(bullet)
             fire_sound.play()
             self.bullet_count -= 1
@@ -165,19 +159,42 @@ class Tank(sprite.Sprite):
 
 # Bullet class
 class Bullet(sprite.Sprite):
-    def __init__(self, x, y, color, direction):
+    def __init__(self, x, y, color, angle):
         super().__init__()
         self.image = bullet_img
         self.rect = self.image.get_rect(center=(x, y))
-        self.speed = BULLET_SPEED_P1 if color == "red" else BULLET_SPEED_P2  # Different speeds for players
-        self.direction = direction  # "up" or "down"
+        self.speed = BULLET_SPEED
+        self.angle = angle  # Угол направления пули
+        self.direction = self.calculate_direction()
+
+    def calculate_direction(self):
+        # Рассчитываем направление пули на основе угла
+        if self.angle == 0:
+            return (0, -1)  # Вверх
+        elif self.angle == 180:
+            return (0, 1)  # Вниз
+        elif self.angle == 90:
+            return (-1, 0)  # Вліво
+        elif self.angle == 270:
+            return (1, 0)  # Вправо
 
     def update(self):
-        if self.direction == "up":
-            self.rect.y -= self.speed  # Move up
-        elif self.direction == "down":
-            self.rect.y += self.speed  # Move down
-        if self.rect.bottom < 0 or self.rect.top > HEIGHT:
+        self.rect.x += self.direction[0] * self.speed
+        self.rect.y += self.direction[1] * self.speed
+        if self.rect.bottom < 0 or self.rect.top > HEIGHT or self.rect.left < 0 or self.rect.right > WIDTH:
+            self.kill()
+
+# Explosion class
+class Explosion(sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = transform.scale(image.load("assets/explosion/simple_explosion.png"), (50, 50))  # Просте зображення вибуху
+        self.rect = self.image.get_rect(center=(x, y))
+        self.lifetime = 30  # Час життя вибуху (у кадрах)
+
+    def update(self):
+        self.lifetime -= 1
+        if self.lifetime <= 0:
             self.kill()
 
 # Player controls
@@ -188,13 +205,19 @@ controls_p2 = {"up": K_UP, "down": K_DOWN, "left": K_LEFT, "right": K_RIGHT, "sh
 player1_score = 0
 player2_score = 0
 
-# Main game loop
+# Отримуємо імена гравців та режим гри
+player1_name = get_player_name("Гравець 1:")
+player2_name = get_player_name("Гравець 2:")
+rounds_to_win = choose_game_mode()
+
+# Основной игровой цикл
 running = True
 while running:
     player1 = Tank(200, HEIGHT - 80, "red", controls_p1)
     player2 = Tank(WIDTH - 200, 30, "blue", controls_p2)
     players = sprite.Group(player1, player2)
     bullets = sprite.Group()
+    explosions = sprite.Group()
     
     game_over = False
     while not game_over:
@@ -209,13 +232,15 @@ while running:
 
         players.update()
         bullets.update()
+        explosions.update()
 
-        # Draw everything
+        # Малюємо все на екрані
         window.blit(bg, (0, 0))
         players.draw(window)
         bullets.draw(window)
+        explosions.draw(window)
 
-        # Display reloading status
+        # Відображення статусу перезарядки
         if player1.reloading:
             reload_text = font_small.render("Reloading...", True, WHITE)
             window.blit(reload_text, (player1.rect.x, player1.rect.y - 20))
@@ -223,24 +248,28 @@ while running:
             reload_text = font_small.render("Reloading...", True, WHITE)
             window.blit(reload_text, (player2.rect.x, player2.rect.y - 20))
 
-        # Display scores
+        # Відображення рахунку
         score_text = font_small.render(f"{player1_name}: {player1_score}  {player2_name}: {player2_score}", True, WHITE)
         window.blit(score_text, (WIDTH // 2 - score_text.get_width() // 2, 10))
 
-        # Check for collisions
+        # Перевірка на зіткнення
         if sprite.spritecollide(player1, bullets, True):
             player2_score += 1
+            explosion = Explosion(player1.rect.centerx, player1.rect.centery)
+            explosions.add(explosion)
             explosion_sound.play()
             game_over = True
         if sprite.spritecollide(player2, bullets, True):
             player1_score += 1
+            explosion = Explosion(player2.rect.centerx, player2.rect.centery)
+            explosions.add(explosion)
             explosion_sound.play()
             game_over = True
 
         display.update()
         clock.tick(FPS)
 
-    # Check for winner
+    # Перевірка на переможця
     if player1_score >= rounds_to_win:
         winner = player1_name
         running = False
@@ -248,17 +277,17 @@ while running:
         winner = player2_name
         running = False
 
-    # Reset tanks to initial positions for the next round
+    # Скидання танків до початкових позицій для наступного раунду
     player1.rect.center = (200, HEIGHT - 80)
     player2.rect.center = (WIDTH - 200, 30)
 
-# Game over screen
+# Екран завершення гри
 window.fill(BLACK)
 window.blit(font_main.render("GAME OVER", True, WHITE), (WIDTH // 2 - 150, 100))
 window.blit(font_main.render(f"Winner: {winner}", True, WHITE), (WIDTH // 2 - 150, 200))
 window.blit(font_small.render(f"{player1_name}: {player1_score}", True, WHITE), (WIDTH // 2 - 150, 300))
 window.blit(font_small.render(f"{player2_name}: {player2_score}", True, WHITE), (WIDTH // 2 - 150, 350))
 display.update()
-time.delay(5000)  # 5-second delay
+time.delay(5000)  # Затримка 5 секунд
 
 quit()
