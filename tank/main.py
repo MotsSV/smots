@@ -83,6 +83,7 @@ def settings_menu():
     slider = Rect(WIDTH // 2 - 100, 200, 200, 20)
     slider_knob = Rect(WIDTH // 2 - 10, 190, 20, 40)
     fps_value = FPS
+    dragging = False  # Флаг, указывающий, что ползунок перемещается
 
     while True:
         window.fill(BLACK)
@@ -92,15 +93,19 @@ def settings_menu():
         mb = mouse.get_pressed()
 
         draw.rect(window, GRAY, slider)
-        draw.rect(window, GREEN if slider_knob.collidepoint((mx, my)) else WHITE, slider_knob)
+        draw.rect(window, GREEN if slider_knob.collidepoint((mx, my)) or dragging else WHITE, slider_knob)
 
-        if mb[0] and slider_knob.collidepoint((mx, my)):
-            slider_knob.x = mx - 10
-            if slider_knob.x < slider.x:
-                slider_knob.x = slider.x
-            if slider_knob.x > slider.x + slider.width - slider_knob.width:
-                slider_knob.x = slider.x + slider.width - slider_knob.width
-            fps_value = int((slider_knob.x - slider.x) / slider.width * 120 + 30)  
+        if mb[0]:
+            if slider_knob.collidepoint((mx, my)) or dragging:
+                dragging = True
+                slider_knob.x = mx - 10
+                if slider_knob.x < slider.x:
+                    slider_knob.x = slider.x
+                if slider_knob.x > slider.x + slider.width - slider_knob.width:
+                    slider_knob.x = slider.x + slider.width - slider_knob.width
+                fps_value = int((slider_knob.x - slider.x) / slider.width * 1620 + 30)  # 1458 = 1488 - 30
+        else:
+            dragging = False
 
         draw_text(f"FPS: {fps_value}", font_small, WHITE, window, WIDTH // 2, 250)
 
